@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shelby File Share — Decentralized Storage on Aptos</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --shelby-bg: #080c10;
+    --shelby-surface: #0d1117;
+    --shelby-card: #111820;
+    --shelby-border: rgba(255,255,255,0.07);
+    --shelby-accent: #00e5ff;
+    --shelby-accent2: #7c3aed;
+    --shelby-green: #00ff94;
+    --shelby-text: #c8d6e5;
+    --shelby-muted: #4a5568;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--shelby-bg);
+    color: var(--shelby-text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    top: -30%;
+    left: -10%;
+    width: 60%;
+    height: 60%;
+    background: radial-gradient(ellipse, rgba(0,229,255,0.04) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -20%;
+    right: -10%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(ellipse, rgba(124,58,237,0.05) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .mono { font-family: 'Space Mono', monospace; }
+  .glass {
+    background: var(--shelby-card);
+    border: 1px solid var(--shelby-border);
+    backdrop-filter: blur(12px);
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--shelby-accent), #0099bb);
+    color: #000;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: opacity .18s, transform .18s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-primary:hover { opacity: .88; transform: translateY(-1px); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--shelby-border);
+    color: var(--shelby-text);
+    cursor: pointer;
+    transition: border-color .18s, background .18s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-ghost:hover { border-color: var(--shelby-accent); background: rgba(0,229,255,0.05); }
+  .btn-wallet {
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(124,58,237,0.15));
+    border: 1px solid rgba(0,229,255,0.3);
+    color: var(--shelby-accent);
+    cursor: pointer;
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    transition: all .2s;
+  }
+  .btn-wallet:hover { border-color: var(--shelby-accent); background: rgba(0,229,255,0.18); }
+  .btn-wallet.connected {
+    background: rgba(0,255,148,0.08);
+    border-color: rgba(0,255,148,0.3);
+    color: var(--shelby-green);
+  }
+  .drop-zone {
+    border: 2px dashed rgba(0,229,255,0.2);
+    background: rgba(0,229,255,0.02);
+    transition: border-color .2s, background .2s;
+    cursor: pointer;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: rgba(0,229,255,0.5);
+    background: rgba(0,229,255,0.05);
+  }
+  .progress-bar {
+    height: 3px;
+    background: linear-gradient(90deg, var(--shelby-accent), var(--shelby-accent2));
+    border-radius: 2px;
+    width: 0%;
+    transition: width .05s linear;
+  }
+  .tag {
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: rgba(0,229,255,0.1);
+    color: var(--shelby-accent);
+    border: 1px solid rgba(0,229,255,0.2);
+    letter-spacing: .03em;
+  }
+  .tag-green {
+    background: rgba(0,255,148,0.08);
+    color: var(--shelby-green);
+    border-color: rgba(0,255,148,0.2);
+  }
+  .file-row {
+    border-bottom: 1px solid var(--shelby-border);
+    transition: background .15s;
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-row:hover { background: rgba(255,255,255,0.02); }
+  .dot-pulse {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--shelby-green);
+    box-shadow: 0 0 6px var(--shelby-green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .link-badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    background: rgba(124,58,237,0.12);
+    border: 1px solid rgba(124,58,237,0.25);
+    color: #a78bfa;
+    border-radius: 6px;
+    padding: 8px 12px;
+    word-break: break-all;
+    flex: 1;
+    outline: none;
+    cursor: text;
+  }
+  .toggle-wrap { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .toggle {
+    width: 38px; height: 20px;
+    background: var(--shelby-muted);
+    border-radius: 999px;
+    position: relative;
+    transition: background .2s;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: none;
+  }
+  .toggle.on { background: var(--shelby-accent2); }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    top: 3px; left: 3px;
+    transition: left .2s;
+  }
+  .toggle.on::after { left: 21px; }
+  .copy-flash {
+    animation: flashGreen .5s ease;
+  }
+  @keyframes flashGreen {
+    0% { color: var(--shelby-accent); }
+    50% { color: var(--shelby-green); }
+    100% { color: var(--shelby-accent); }
+  }
+  .fade-in { animation: fadeIn .3s ease; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .section-label {
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: .12em;
+    color: var(--shelby-muted);
+    text-transform: uppercase;
+  }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="glass sticky top-0 z-50" style="border-top:none;border-left:none;border-right:none;">
+  <div class="max-w-4xl mx-auto px-5 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div style="width:28px;height:28px;background:linear-gradient(135deg,#00e5ff,#7c3aed);border-radius:7px;display:flex;align-items:center;justify-content:center;">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L12 4.5V9.5L7 13L2 9.5V4.5L7 1Z" fill="rgba(0,0,0,0.8)"/><path d="M7 4L10 5.8V9.5L7 11.3L4 9.5V5.8L7 4Z" fill="white" opacity=".4"/></svg>
+      </div>
+      <span class="mono font-bold text-white text-sm tracking-tight">Shelby<span style="color:var(--shelby-accent)">Share</span></span>
+      <span class="tag hidden sm:inline-block">APTOS</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="connStatus" class="section-label hidden sm:block">NOT CONNECTED</span>
+      <button id="walletBtn" class="btn-wallet px-4 py-2 rounded-lg text-sm font-medium" onclick="connectWallet()">
+        Connect Wallet
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="max-w-4xl mx-auto px-5 py-10 relative z-10">
+
+  <!-- HERO -->
+  <div class="mb-9 text-center">
+    <p class="section-label mb-2">DECENTRALIZED · REAL-TIME · APTOS</p>
+    <h1 class="text-2xl sm:text-3xl font-semibold text-white leading-tight mb-2">Decentralized Real-Time Storage<br>on Aptos</h1>
+    <p class="text-sm" style="color:var(--shelby-muted);">Drop a file. Get a link. Share anywhere. Powered by Shelby Hot Storage.</p>
+  </div>
+
+  <!-- UPLOAD CARD -->
+  <div class="glass rounded-2xl p-6 mb-5" id="uploadCard">
+    <div class="flex items-center justify-between mb-5">
+      <span class="section-label">UPLOAD FILE</span>
+      <div class="flex items-center gap-2">
+        <div class="dot-pulse" id="networkDot"></div>
+        <span class="tag tag-green">SHELBY HOT STORAGE</span>
+      </div>
+    </div>
+
+    <!-- DROP ZONE -->
+    <div class="drop-zone rounded-xl p-8 text-center mb-5" id="dropZone"
+      onclick="document.getElementById('fileInput').click()"
+      ondragover="handleDragOver(event)"
+      ondragleave="handleDragLeave(event)"
+      ondrop="handleDrop(event)">
+      <input type="file" id="fileInput" class="hidden" onchange="handleFile(this.files[0])">
+      <div id="dropIdle">
+        <div class="mb-3 flex justify-center">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" opacity=".4"><path d="M18 4v20M10 16l8-10 8 10" stroke="var(--shelby-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 28h24" stroke="var(--shelby-accent)" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <p class="text-white font-medium text-sm mb-1">Drag & drop your file here</p>
+        <p class="text-xs" style="color:var(--shelby-muted);">or click to browse — any file type, up to 100MB</p>
+      </div>
+      <div id="dropSelected" class="hidden">
+        <div class="mb-2 flex justify-center">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect x="6" y="2" width="20" height="28" rx="3" fill="rgba(0,229,255,0.12)" stroke="var(--shelby-accent)" stroke-width="1.5"/><path d="M11 11h10M11 16h10M11 21h6" stroke="var(--shelby-accent)" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </div>
+        <p id="selectedName" class="text-white font-medium text-sm mono mb-1"></p>
+        <p id="selectedSize" class="text-xs" style="color:var(--shelby-muted);"></p>
+      </div>
+    </div>
+
+    <!-- PROGRESS -->
+    <div id="progressWrap" class="hidden mb-5">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-xs" style="color:var(--shelby-muted);" id="progressLabel">Uploading to Shelby Hot Storage…</span>
+        <span class="mono text-xs" style="color:var(--shelby-accent);" id="progressPct">0%</span>
+      </div>
+      <div style="height:3px;background:rgba(255,255,255,0.07);border-radius:2px;">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+    </div>
+
+    <!-- UPLOAD BTN -->
+    <div id="uploadBtnWrap">
+      <button class="btn-primary w-full py-3 rounded-xl text-sm" id="uploadBtn" onclick="startUpload()" disabled style="opacity:.35;cursor:default;">
+        Upload to Shelby
+      </button>
+    </div>
+
+    <!-- SHARE LINK -->
+    <div id="shareLinkWrap" class="hidden fade-in mt-5">
+      <div class="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="var(--shelby-green)" stroke-width="1.5"/><path d="M4.5 7l2 2 3-3" stroke="var(--shelby-green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="text-xs font-medium" style="color:var(--shelby-green);">Stored on Shelby — Instant Access (&lt;1s)</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="text" id="shareLink" class="link-badge" readonly>
+        <button class="btn-ghost px-4 py-2 rounded-lg text-sm" id="copyLinkBtn" onclick="copyLink('shareLink','copyLinkBtn')">Copy</button>
+      </div>
+
+      <!-- LOCK FILE TOGGLE -->
+      <div class="mt-5 pt-4" style="border-top:1px solid var(--shelby-border);">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-white mb-0.5">Lock this file</p>
+            <p class="text-xs" style="color:var(--shelby-muted);">Require APT payment to access</p>
+          </div>
+          <button class="toggle" id="lockToggle" onclick="toggleLock()"></button>
+        </div>
+        <div id="lockPanel" class="hidden mt-4 fade-in">
+          <div class="flex items-center gap-3">
+            <div class="flex-1">
+              <label class="section-label block mb-1.5">ACCESS PRICE (APT)</label>
+              <div class="flex items-center gap-2" style="background:rgba(255,255,255,0.04);border:1px solid var(--shelby-border);border-radius:8px;padding:8px 12px;">
+                <input type="number" id="aptPrice" value="0.5" step="0.1" min="0.1"
+                  style="background:transparent;border:none;outline:none;color:white;font-family:'Space Mono',monospace;font-size:14px;width:80px;">
+                <span class="mono text-xs" style="color:var(--shelby-muted);">APT</span>
+              </div>
+            </div>
+            <div class="flex flex-col gap-2">
+              <button class="btn-primary px-5 py-2 rounded-lg text-sm" onclick="mockUnlock()">Unlock (mock)</button>
+            </div>
+          </div>
+          <p id="unlockMsg" class="text-xs mt-2 hidden" style="color:var(--shelby-green);">✓ Payment simulated — access granted</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FILE LIST -->
+  <div class="glass rounded-2xl" id="fileListCard">
+    <div class="px-6 py-4 flex items-center justify-between" style="border-bottom:1px solid var(--shelby-border);">
+      <span class="section-label">YOUR FILES</span>
+      <span class="tag" id="fileCount">0 files</span>
+    </div>
+
+    <div id="emptyState" class="px-6 py-10 text-center">
+      <p class="text-sm" style="color:var(--shelby-muted);">No files uploaded yet.</p>
+      <p class="text-xs mt-1" style="color:var(--shelby-muted);opacity:.6;">Upload a file above to get started.</p>
+    </div>
+
+    <div id="fileList" class="divide-y divide-transparent"></div>
+  </div>
+
+  <!-- FOOTER -->
+  <p class="text-center mt-8 text-xs" style="color:var(--shelby-muted);">
+    <span class="mono">Shelby Network</span> · Built on Aptos · This is a mockup — no real uploads or blockchain calls are made.
+  </p>
+</main>
+
+<script>
+  const state = {
+    connected: false,
+    address: '0xA1f3...92F',
+    files: [],
+    uploading: false,
+    currentFile: null,
+    locked: false,
+  };
+
+  function connectWallet() {
+    const btn = document.getElementById('walletBtn');
+    const statusEl = document.getElementById('connStatus');
+    if (!state.connected) {
+      btn.textContent = 'Connecting…';
+      btn.disabled = true;
+      setTimeout(() => {
+        state.connected = true;
+        btn.textContent = state.address;
+        btn.classList.add('connected');
+        btn.disabled = false;
+        statusEl.textContent = 'CONNECTED';
+        statusEl.style.color = 'var(--shelby-green)';
+      }, 900);
+    } else {
+      state.connected = false;
+      btn.textContent = 'Connect Wallet';
+      btn.classList.remove('connected');
+      statusEl.textContent = 'NOT CONNECTED';
+      statusEl.style.color = '';
+    }
+  }
+
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    return (b/1048576).toFixed(2) + ' MB';
+  }
+
+  function randomHash(len) {
+    const c = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let r = '';
+    for (let i = 0; i < len; i++) r += c[Math.floor(Math.random()*c.length)];
+    return r;
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.add('drag-over');
+  }
+  function handleDragLeave() {
+    document.getElementById('dropZone').classList.remove('drag-over');
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleFile(file);
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    state.currentFile = file;
+    document.getElementById('dropIdle').classList.add('hidden');
+    document.getElementById('dropSelected').classList.remove('hidden');
+    document.getElementById('selectedName').textContent = file.name;
+    document.getElementById('selectedSize').textContent = formatBytes(file.size);
+    const btn = document.getElementById('uploadBtn');
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+    // reset share link
+    document.getElementById('shareLinkWrap').classList.add('hidden');
+    document.getElementById('progressWrap').classList.add('hidden');
+    document.getElementById('progressBar').style.width = '0%';
+  }
+
+  function startUpload() {
+    if (!state.currentFile || state.uploading) return;
+    state.uploading = true;
+    const btn = document.getElementById('uploadBtn');
+    btn.disabled = true;
+    btn.style.opacity = '.5';
+    btn.textContent = 'Uploading…';
+    document.getElementById('progressWrap').classList.remove('hidden');
+    document.getElementById('shareLinkWrap').classList.add('hidden');
+    let pct = 0;
+    const bar = document.getElementById('progressBar');
+    const pctEl = document.getElementById('progressPct');
+    const labels = ['Encrypting file…', 'Connecting to Shelby nodes…', 'Distributing chunks…', 'Finalizing upload…'];
+    const labelEl = document.getElementById('progressLabel');
+    let labelIdx = 0;
+    const interval = setInterval(() => {
+      pct += Math.random() * 7 + 2;
+      if (pct >= 100) pct = 100;
+      bar.style.width = pct + '%';
+      pctEl.textContent = Math.floor(pct) + '%';
+      if (pct > 25 * (labelIdx+1) && labelIdx < labels.length - 1) {
+        labelIdx++;
+        labelEl.textContent = labels[labelIdx];
+      }
+      if (pct >= 100) {
+        clearInterval(interval);
+        finishUpload();
+      }
+    }, 60);
+  }
+
+  function finishUpload() {
+    const file = state.currentFile;
+    const hash = randomHash(10);
+    const link = 'https://shelby.storage/file/' + hash;
+    document.getElementById('shareLink').value = link;
+    document.getElementById('shareLinkWrap').classList.remove('hidden');
+    const btn = document.getElementById('uploadBtn');
+    btn.textContent = 'Upload to Shelby';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    state.uploading = false;
+    // Add to list
+    state.files.unshift({ name: file.name, size: formatBytes(file.size), link, locked: false });
+    renderList();
+    // reset lock
+    document.getElementById('lockToggle').classList.remove('on');
+    document.getElementById('lockPanel').classList.add('hidden');
+    document.getElementById('unlockMsg').classList.add('hidden');
+    state.locked = false;
+  }
+
+  function renderList() {
+    const list = document.getElementById('fileList');
+    const empty = document.getElementById('emptyState');
+    const count = document.getElementById('fileCount');
+    count.textContent = state.files.length + (state.files.length === 1 ? ' file' : ' files');
+    if (state.files.length === 0) {
+      empty.classList.remove('hidden');
+      list.innerHTML = '';
+      return;
+    }
+    empty.classList.add('hidden');
+    list.innerHTML = state.files.map((f, i) => `
+      <div class="file-row px-6 py-4 flex items-center gap-4 fade-in">
+        <div style="width:34px;height:34px;background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" fill="rgba(0,229,255,0.15)" stroke="var(--shelby-accent)" stroke-width="1.2"/><path d="M10 2v3h3" stroke="var(--shelby-accent)" stroke-width="1.2"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white truncate">${f.name}</p>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-xs mono" style="color:var(--shelby-muted);">${f.size}</span>
+            <span class="tag tag-green" style="font-size:9px;">STORED</span>
+            ${f.locked ? '<span class="tag" style="background:rgba(124,58,237,0.12);color:#a78bfa;border-color:rgba(124,58,237,0.3);font-size:9px;">LOCKED</span>' : ''}
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn-ghost px-3 py-1.5 rounded-lg text-xs" onclick="window.open('${f.link}')">Open</button>
+          <button class="btn-ghost px-3 py-1.5 rounded-lg text-xs" id="rowCopy${i}" onclick="copyRowLink('${f.link}','rowCopy${i}')">Copy Link</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function copyLink(inputId, btnId) {
+    const val = document.getElementById(inputId).value;
+    navigator.clipboard.writeText(val).catch(() => {});
+    const btn = document.getElementById(btnId);
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.classList.add('copy-flash');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copy-flash'); }, 1500);
+  }
+
+  function copyRowLink(link, btnId) {
+    navigator.clipboard.writeText(link).catch(() => {});
+    const btn = document.getElementById(btnId);
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1400);
+  }
+
+  function toggleLock() {
+    state.locked = !state.locked;
+    const tog = document.getElementById('lockToggle');
+    const panel = document.getElementById('lockPanel');
+    state.locked ? tog.classList.add('on') : tog.classList.remove('on');
+    state.locked ? panel.classList.remove('hidden') : panel.classList.add('hidden');
+    document.getElementById('unlockMsg').classList.add('hidden');
+    // update latest file
+    if (state.files.length > 0) state.files[0].locked = state.locked;
+    renderList();
+  }
+
+  function mockUnlock() {
+    const price = document.getElementById('aptPrice').value;
+    const msg = document.getElementById('unlockMsg');
+    msg.textContent = `✓ Payment of ${price} APT simulated — access granted`;
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 3000);
+  }
+
+  // init
+  renderList();
+</script>
+</body>
+</html>
