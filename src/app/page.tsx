@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, type DragEvent } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 
 type FileRecord = {
@@ -11,7 +11,7 @@ type FileRecord = {
 };
 
 export default function Home() {
-  const { connected, account, connect, disconnect, isLoading } = useWallet();
+  const { connected, account, connect, disconnect, isLoading, signAndSubmitTransaction } = useWallet();
   const addressString = account?.address?.toString() || "";
   const address = addressString ? `${addressString.slice(0, 6)}...${addressString.slice(-4)}` : "";
   const [files, setFiles] = useState<FileRecord[]>([]);
