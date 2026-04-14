@@ -51,6 +51,19 @@ Shelby Protocol is a decentralized data storage and sharing dashboard built on t
 
 4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Deploying to Vercel
+
+This Next.js app can be published publicly with Vercel in just a few steps:
+
+1. Push your code to GitHub (already done).
+2. Go to https://vercel.com and sign in with GitHub.
+3. Create a new project and select `shelby-share-dapp`.
+4. Leave the default Next.js settings and deploy.
+
+After deployment, Vercel will provide a public URL that everyone can access.
+
+If you prefer a different host, the app also works on any Next.js-compatible platform.
+
 ## Smart Contracts
 
 To compile and test the Move smart contracts, navigate to the `contracts/` directory and use the Aptos CLI:
