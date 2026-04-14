@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, type DragEvent } from "react";
+import { useState, useRef } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 
 type FileRecord = {
@@ -36,7 +36,7 @@ export default function Home() {
 
   const connectWallet = () => {
     if (!connected) {
-      connect("Petra" as any);
+      connect("Petra");
     } else {
       disconnect();
     }
@@ -156,7 +156,7 @@ export default function Home() {
             functionArguments: [hash, priceInOctas, newLocked]
           }
         });
-      } catch (e) {
+      } catch {
         return; // aborted
       }
     }
@@ -182,7 +182,7 @@ export default function Home() {
         }
       });
       setUnlockMsg(`✓ Payment of ${aptPrice} APT verified on-chain — access granted`);
-    } catch (e) {
+    } catch {
       setUnlockMsg(`✗ Transaction failed`);
     }
   };
