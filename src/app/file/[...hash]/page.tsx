@@ -5,7 +5,7 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { motion } from "framer-motion";
 import { useAptBalance, useViewModule } from "@aptos-labs/react";
 import { AccountAddress, Aptos as AptosClient, AptosConfig, Network } from "@aptos-labs/ts-sdk";
-import { useBlobMetadata, useShelbyClient } from "@shelby-protocol/react";
+import { useFullObjectMetadata, useShelbyClient } from "@shelby-protocol/react";
 import { DebugConsole } from "@/components/DebugConsole";
 import { WalletSelectorModal } from "@/components/WalletSelectorModal";
 
@@ -17,7 +17,16 @@ const SHELBY_API_KEY = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
 const SHELBY_RPC_BASE = "https://api.shelbynet.shelby.xyz/shelby";
 const SHELBY_GATEWAY = process.env.NEXT_PUBLIC_SHELBY_GATEWAY || "https://gateway.shelby.xyz";
 
-export default function FileDownloadPage({ params }: { params: { hash: string | string[] } }) {
+export default function FileDownloadPage({ params }: { params: Promise<{ hash: string | string[] }> }) {
+  const [resolvedParams, setResolvedParams] = useState<{ hash: string | string[] }>({ hash: "" });
+
+  useEffect(() => {
+    Promise.resolve(params).then((p) => {
+      if (p) setResolvedParams(p);
+    });
+  }, [params]);
+
+  const activeHash = resolvedParams.hash;
   const { connected, account, connect, disconnect, isLoading: walletLoading, signAndSubmitTransaction, signTransaction } = useWallet();
   const shelbyClient = useShelbyClient();
   const isLoading = walletLoading;
@@ -34,10 +43,10 @@ export default function FileDownloadPage({ params }: { params: { hash: string | 
       try {
         addrStr = AccountAddress.from(new Uint8Array(bytes as number[])).toString();
       } catch (e) {
-        addrStr = rawAddr.toString();
+        addrStr = String(rawAddr);
       }
     } else {
-      addrStr = rawAddr.toString();
+      addrStr = String(rawAddr);
     }
     if (addrStr === "[object Object]") return "Connected";
     return `${addrStr.slice(0, 6)}...${addrStr.slice(-4)}`;
@@ -54,35 +63,36 @@ export default function FileDownloadPage({ params }: { params: { hash: string | 
   const [ownerAddr, fileName] = (() => {
     try {
       // If catch-all route, hash is an array
-      if (Array.isArray(params.hash)) {
-        if (params.hash.length >= 2) {
-          return [params.hash[0], params.hash.slice(1).join('/')];
+      if (Array.isArray(activeHash)) {
+        if (activeHash.length >= 2) {
+          return [activeHash[0], activeHash.slice(1).join('/')];
         }
-        return ["", params.hash[0]];
+        return ["", activeHash[0]];
       }
       
-      const decoded = decodeURIComponent(params.hash);
+      const decoded = decodeURIComponent(activeHash);
       const parts = decoded.split('/');
       if (parts.length >= 2) {
         return [parts[0], parts.slice(1).join('/')];
       }
       return ["", decoded];
     } catch (e) {
-      return ["", Array.isArray(params.hash) ? params.hash.join('/') : params.hash];
+      return ["", Array.isArray(activeHash) ? activeHash.join('/') : activeHash];
     }
   })();
 
-  const { data: metadata, isLoading: metadataLoading, error: metadataError, refetch: refetchMetadata } = useBlobMetadata({
+  const { data: metadata, isLoading: metadataLoading, error: metadataError, refetch: refetchMetadata } = useFullObjectMetadata({
     account: ownerAddr,
-    name: fileName
+    name: fileName,
+    client: shelbyClient
   });
 
   const walletAddressStr = (() => {
     if (!account?.address) return "";
-    const raw = account.address;
+    const raw = account.address as any;
     if (typeof raw === "string") return raw.trim();
-    if (raw && (raw as any).data) {
-      const d = (raw as any).data;
+    if (raw && raw.data) {
+      const d = raw.data;
       const b = Array.isArray(d) ? d : Object.values(d);
       try { return AccountAddress.from(new Uint8Array(b as number[])).toString().trim(); } catch { return raw.toString().trim(); }
     }
@@ -291,11 +301,11 @@ export default function FileDownloadPage({ params }: { params: { hash: string | 
       
       // Robust address extraction
       const cleanAddress = (() => {
-        const raw = account.address;
+        const raw = account.address as any;
         let addr = "";
         if (typeof raw === "string") addr = raw;
-        else if (raw && (raw as any).data) {
-          const d = (raw as any).data;
+        else if (raw && raw.data) {
+          const d = raw.data;
           const b = Array.isArray(d) ? d : Object.values(d);
           try { addr = AccountAddress.from(new Uint8Array(b as number[])).toString(); } catch { addr = raw.toString(); }
         } else {
@@ -307,7 +317,7 @@ export default function FileDownloadPage({ params }: { params: { hash: string | 
       console.log("Starting Unlock Transaction for:", fileName);
       console.log("Signer address:", cleanAddress);
       
-      const fullHash = Array.isArray(params.hash) ? params.hash.join('/') : params.hash;
+      const fullHash = Array.isArray(activeHash) ? activeHash.join('/') : activeHash;
 
       setStatusMsg("Step 2/3: Confirming on Aptos blockchain...");
       

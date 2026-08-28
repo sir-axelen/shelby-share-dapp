@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    let body = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+
     const authHeader = req.headers.get("Authorization");
     
     let apiKey = "";
@@ -12,21 +18,33 @@ export async function POST(req: NextRequest) {
       apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY;
     }
 
-    const indexerUrl = process.env.NEXT_PUBLIC_SHELBY_INDEXER || "https://api.shelbynet.shelby.xyz/v1/graphql";
+    const indexerUrl = process.env.NEXT_PUBLIC_SHELBY_INDEXER || "https://api.shelbynet.aptoslabs.com/v1/graphql";
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (apiKey) {
+      headers["x-api-key"] = apiKey;
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
 
     const response = await fetch(indexerUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-      },
+      headers,
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = { error: responseText || `Indexer returned HTTP ${response.status}` };
+    }
+
     return NextResponse.json(data, { status: response.status });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Shelby indexer proxy error:", error);
-    return NextResponse.json({ error: "Proxy failed" }, { status: 500 });
+    return NextResponse.json({ error: error?.message || "Proxy failed" }, { status: 500 });
   }
 }

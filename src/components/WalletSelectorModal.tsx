@@ -17,9 +17,10 @@ export function WalletSelectorModal({ isOpen, onClose }: WalletSelectorModalProp
       await connect(walletName as any);
       onClose();
     } catch (err: any) {
-      console.error("Wallet connection failed:", err);
+      const errMsg = err instanceof Error ? (err.message || err.name) : (err?.message || String(err));
+      console.warn("Wallet connection failed:", errMsg);
       // Fallback redirect for installing wallets
-      if (err.name === "WalletNotReadyError" || err.name === "WalletNotFoundError" || (err.message && err.message.includes("not ready"))) {
+      if (err?.name === "WalletNotReadyError" || err?.name === "WalletNotFoundError" || (err?.message && err.message.includes("not ready"))) {
         if (walletName === "Petra") {
           const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
           if (isMobile) {
@@ -83,7 +84,7 @@ export function WalletSelectorModal({ isOpen, onClose }: WalletSelectorModalProp
 
             {/* Wallet Options list */}
             <div className="p-6 space-y-3 overflow-y-auto flex-1" style={{ scrollbarWidth: "thin" }}>
-              {wallets.map((wallet) => {
+              {wallets?.filter(wallet => wallet.name === 'Petra').map((wallet) => {
                 const isInstalled = wallet.readyState === "Installed";
                 return (
                   <button

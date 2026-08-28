@@ -52,9 +52,13 @@ export async function POST(req: NextRequest) {
           }
         );
         if (fallbackRes.ok) {
-          const data = await fallbackRes.json();
+          const fallbackText = await fallbackRes.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(fallbackText);
+          } catch {}
           aptSuccess = true;
-          if (data.txn_hashes && data.txn_hashes[0]) {
+          if (data && data.txn_hashes && data.txn_hashes[0]) {
             aptTxHash = data.txn_hashes[0];
           }
         }

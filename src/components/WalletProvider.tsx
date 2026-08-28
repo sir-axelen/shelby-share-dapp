@@ -6,21 +6,47 @@ if (typeof window !== "undefined") {
   // This prevents Next.js dev mode from crashing with "Unhandled Runtime Error".
   window.addEventListener("unhandledrejection", (event) => {
     const reason = event.reason;
+    
+    // Catch standard string rejections
+    if (typeof reason === "string" && (reason.includes("User rejected") || reason.includes("WalletNotConnectedError"))) {
+      event.preventDefault();
+      return;
+    }
+
+    if (reason instanceof SyntaxError && (reason.message.includes("is not valid JSON") || reason.message.includes("Unexpected token"))) {
+      event.preventDefault();
+      console.warn("[WalletProvider] Suppressed invalid JSON response error:", reason.message);
+      return;
+    }
+
     if (reason instanceof TypeError && reason.message === "Failed to fetch") {
       event.preventDefault();
       return;
     }
-    // Also catch errors from AptosConnect / wallet adapter initialization
+    
+    // Catch object rejections that might crash Next.js overlay
     if (reason && typeof reason === "object") {
       const msg = reason.message || String(reason);
+      const name = reason.name || "";
       if (
         msg.includes("Failed to fetch") ||
         msg.includes("AptosConnect") ||
         msg.includes("getChainId") ||
-        msg.includes("getLedgerInfo")
+        msg.includes("getLedgerInfo") ||
+        msg.includes("User rejected") ||
+        msg.includes("is not valid JSON") ||
+        msg.includes("Unexpected token") ||
+        name === "WalletNotConnectedError" ||
+        msg.includes("WalletNotConnectedError")
       ) {
         event.preventDefault();
-        console.warn("[WalletProvider] Suppressed wallet init error:", msg);
+        console.warn("[WalletProvider] Suppressed network/wallet/JSON error:", msg || name);
+        return;
+      }
+      
+      // If it's a plain object with code 4001 (User rejected), suppress it
+      if (reason.code === 4001) {
+        event.preventDefault();
         return;
       }
     }
@@ -41,23 +67,23 @@ const queryClient = new QueryClient();
 
 const shelbyClient = new ShelbyClient({ 
   network: Network.SHELBYNET,
-  apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY,
+  ...(process.env.NEXT_PUBLIC_SHELBY_API_KEY ? { apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY } : {}),
+  locationHint: process.env.NEXT_PUBLIC_SHELBY_LOCATION || "shelbynet-1",
   indexer: {
     baseUrl: typeof window !== "undefined" ? `${window.location.origin}/api/shelby-indexer` : "http://localhost:3000/api/shelby-indexer",
+    ...(process.env.NEXT_PUBLIC_SHELBY_API_KEY ? { apiKey: process.env.NEXT_PUBLIC_SHELBY_API_KEY } : {}),
   }
 });
+
+
 
 export function WalletProvider({ children }: PropsWithChildren) {
   return (
     <QueryClientProvider client={queryClient}>
       <ShelbyClientProvider client={shelbyClient}>
         <AptosWalletAdapterProvider
-          optInWallets={["Petra", "Martian", "Pontem"]}
-          autoConnect={false}
-          dappConfig={{
-            network: Network.SHELBYNET,
-            aptosConnect: { dappId: undefined as any },
-          }}
+          optInWallets={["Petra"] as any}
+          autoConnect={true}
         >
           <AptosCoreProvider>
             {children}

@@ -9,7 +9,8 @@ import { useAptBalance } from "@aptos-labs/react";
 // Initialize Aptos client using default SHELBYNET (matching the working upload flow)
 const aptosConfig = new AptosConfig({ network: Network.SHELBYNET });
 const aptos = new AptosClient(aptosConfig);
-import { useShelbyClient, useEncodeBlobs, useRegisterCommitments, useAccountBlobs } from "@shelby-protocol/react";
+import { useShelbyClient, useUploadBlobs, useAccountBlobs } from "@shelby-protocol/react";
+import { generateCommitments, createDefaultErasureCodingProvider, ShelbyBlobClient } from "@shelby-protocol/sdk/browser";
 import { DebugConsole } from "@/components/DebugConsole";
 import { WalletSelectorModal } from "@/components/WalletSelectorModal";
 
@@ -22,7 +23,7 @@ type FileRecord = {
 };
 
 const uploadToShelbyRPC = async (account: string, blobName: string, blobData: Uint8Array, onProgress?: (pct: number) => void) => {
-  const baseUrl = "https://api.shelbynet.shelby.xyz/shelby";
+  const baseUrl = process.env.NEXT_PUBLIC_SHELBY_RPC_ENDPOINT || "https://api.shelbynet.shelby.xyz/shelby";
   const apiKey = process.env.NEXT_PUBLIC_SHELBY_API_KEY || "";
   const headers = { "x-api-key": apiKey };
   const partSize = 5 * 1024 * 1024; // 5MB chunks
@@ -64,8 +65,7 @@ export default function Dashboard() {
   const walletContext = useWallet();
   const { connected, account, wallet, connect, disconnect, isLoading: walletLoading, signAndSubmitTransaction, signTransaction } = walletContext;
   const shelbyClient = useShelbyClient();
-  const encodeBlobs = useEncodeBlobs();
-  const registerCommitments = useRegisterCommitments({ client: shelbyClient });
+  const uploadBlobs = useUploadBlobs({ client: shelbyClient });
 
   const accountAddrStr = account?.address
     ? (typeof account.address === "string" ? account.address : (account.address as any).toString())
@@ -91,10 +91,10 @@ export default function Dashboard() {
       try {
         addrStr = AccountAddress.from(new Uint8Array(bytes as number[])).toString();
       } catch (e) {
-        addrStr = rawAddr.toString();
+        addrStr = String(rawAddr);
       }
     } else {
-      addrStr = rawAddr.toString();
+      addrStr = String(rawAddr);
     }
     if (addrStr === "[object Object]") return "Connected";
     return `${addrStr.slice(0, 6)}...${addrStr.slice(-4)}`;
@@ -352,10 +352,10 @@ export default function Dashboard() {
         try {
           addrStr = AccountAddress.from(new Uint8Array(bytes as number[])).toString();
         } catch {
-          addrStr = rawAddr.toString();
+          addrStr = String(rawAddr);
         }
       } else {
-        addrStr = rawAddr.toString();
+        addrStr = String(rawAddr);
       }
 
       const res = await fetch("/api/faucet", {
@@ -364,7 +364,13 @@ export default function Dashboard() {
         body: JSON.stringify({ address: addrStr }),
       });
 
-      const data = await res.json();
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {
+        data = { error: resText || "Invalid server response" };
+      }
 
       if (res.ok && data.success) {
         setFaucetMsg(data.message || "1 APT claimed successfully!");
@@ -439,8 +445,10 @@ export default function Dashboard() {
     setProgressPct(0);
   };
 
+  const SHELBY_LOCATION = process.env.NEXT_PUBLIC_SHELBY_LOCATION || "shelbynet-1";
+
   const startUpload = async () => {
-    if (!currentFile || uploading || !walletContext || !account) {
+    if (!currentFile || uploading || !walletContext || !account || !signAndSubmitTransaction) {
       if (!connected) alert("Please connect your wallet first.");
       return;
     }
@@ -450,50 +458,123 @@ export default function Dashboard() {
     setProgressLabel("Uploading to Shelby Hot Storage…");
 
     try {
-      setProgressPct(10);
-
       const arrayBuffer = await currentFile.arrayBuffer();
       const blobData = new Uint8Array(arrayBuffer);
       const cleanFileName = currentFile.name.replace(/\s+/g, '_');
-      const accountAddress = typeof account.address === 'string' ? account.address : account.address.toString();
-      
-      const expirationMicros = Date.now() * 1000 + 47.9 * 60 * 60 * 1000000;
+      const accountAddress = typeof account.address === 'string'
+        ? account.address
+        : String(account.address);
+      const expirationMicros = Math.floor(Date.now() * 1000 + 47.9 * 60 * 60 * 1000000);
 
-      setProgressLabel("Encoding file commitments...");
+      // ── Step 1: Initialize account location preference if not set (1-time tx) ─
+      setProgressLabel("Checking account location preference…");
+      setProgressPct(10);
+      try {
+        const DEPLOYER = "0x85fdb9a176ab8ef1d9d9c1b60d60b3924f0800ac1de1cc2085fb0b8bb4988e6a";
+        const prefRes = await fetch("https://api.shelbynet.shelby.xyz/v1/view", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            function: `${DEPLOYER}::location_preference::get_location_preference`,
+            type_arguments: [],
+            arguments: [accountAddress],
+          }),
+        });
+        const prefText = await prefRes.text();
+        let prefData: any = null;
+        try {
+          prefData = JSON.parse(prefText);
+        } catch {
+          prefData = null;
+        }
+        const hasPreference = prefRes.ok && prefData?.[0] && prefData[0] !== null;
+
+        if (!hasPreference) {
+          setProgressLabel("Setting up account location (one-time approval)…");
+          const initTx = await signAndSubmitTransaction({
+            data: {
+              function: `${DEPLOYER}::location_preference::set_follow_hint_location_preference`,
+              functionArguments: [],
+            },
+          });
+          await aptos.waitForTransaction({ transactionHash: initTx.hash });
+          console.log("[Shelby] Location preference initialized:", initTx.hash);
+        }
+      } catch (prefErr: any) {
+        // Non-blocking — useUploadBlobs will still pass locationHint via SDK config
+        console.warn("[Shelby] Location preference check failed (non-fatal):", prefErr.message);
+      }
+
+      // ── Step 2: useUploadBlobs handles encode + register + upload ─
+      setProgressLabel("Uploading to Shelby (encoding + registering + storing)…");
       setProgressPct(30);
 
-      const commitments = await encodeBlobs.mutateAsync({
-        blobs: [{ blobData }]
-      });
+      try {
+        await uploadBlobs.mutateAsync({
+          signer: {
+            account: account.address,
+            signAndSubmitTransaction,
+          },
+          blobs: [{ blobName: cleanFileName, blobData }],
+          expirationMicros,
+          options: {
+            selectedLocation: SHELBY_LOCATION,
+            locationHint: SHELBY_LOCATION,
+          },
+        });
+      } catch (directErr: any) {
+        console.warn("[Shelby] Direct upload failed, falling back to server-side proxy upload...", directErr.message);
 
-      setProgressLabel("Confirming registration on-chain...");
-      setProgressPct(60);
+        // Fallback: Generate commitments & register blob via wallet, then upload chunksets via server proxy
+        setProgressLabel("Generating blob commitments…");
+        const provider = await createDefaultErasureCodingProvider();
+        const commitments = await generateCommitments(provider, blobData);
 
-      const registerTx = await registerCommitments.mutateAsync({
-        signer: walletContext as any,
-        commitments: [{ blobName: cleanFileName, commitment: commitments[0] }],
-        expirationMicros,
-      });
-      
-      await aptos.waitForTransaction({ transactionHash: registerTx.hash });
+        setProgressLabel("Registering blob on Aptos blockchain…");
+        const registerPayload = ShelbyBlobClient.createRegisterBlobPayload({
+          account: AccountAddress.fromString(accountAddress),
+          blobName: cleanFileName,
+          blobMerkleRoot: commitments.blob_merkle_root,
+          blobSize: blobData.length,
+          expirationMicros,
+          numChunksets: commitments.chunkset_commitments.length,
+          selectedLocation: SHELBY_LOCATION,
+          locationHint: SHELBY_LOCATION,
+          encoding: 0,
+        });
+        const registerTxResult = await signAndSubmitTransaction({ data: registerPayload });
+        await aptos.waitForTransaction({ transactionHash: registerTxResult.hash });
+        const registerTx = { registeredBlobUids: [registerTxResult.hash] };
 
-      setProgressLabel("Uploading to Storage Nodes...");
-      setProgressPct(90);
+        const blobUid = registerTx.registeredBlobUids[0];
+        if (!blobUid) {
+          throw new Error("Failed to retrieve registered blob UID from transaction");
+        }
 
-      await uploadToShelbyRPC(
-        accountAddress,
-        cleanFileName,
-        blobData,
-        (pct) => setProgressPct(pct)
-      );
-      
+        setProgressLabel("Uploading chunksets to Shelby via server proxy…");
+        const formData = new FormData();
+        formData.append("blob", currentFile);
+        formData.append("uid", blobUid.toString());
+        formData.append("commitment", JSON.stringify(commitments));
+
+        const serverRes = await fetch("/api/shelby-upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!serverRes.ok) {
+          const errText = await serverRes.text();
+          throw new Error(`Server proxy upload failed [${serverRes.status}]: ${errText}`);
+        }
+      }
+
       setProgressPct(100);
       setProgressLabel("Upload Complete!");
-      
+
       setTimeout(() => {
         finishUpload(`${accountAddress}/${cleanFileName}`);
       }, 500);
-      
+
     } catch (err: any) {
       console.error("Shelby Upload Error:", err);
       alert(`Upload Failed: ${err.message || "An error occurred during decentralized upload."}`);
@@ -501,6 +582,7 @@ export default function Dashboard() {
       setProgressPct(0);
     }
   };
+
 
   const finishUpload = (blobId: string) => {
     if (!currentFile) return;
@@ -531,7 +613,7 @@ export default function Dashboard() {
       locked: false,
       price: 0,
       fileId: fileId,
-      owner: account ? (typeof account.address === 'string' ? account.address : account.address.toString()) : "",
+      owner: account ? (typeof account.address === 'string' ? account.address : String(account.address)) : "",
       timestamp: Date.now(),
     };
     localStorage.setItem(`shelby_lock_${fileId}`, JSON.stringify(lockData));
@@ -610,9 +692,9 @@ export default function Dashboard() {
           if (raw && (raw as any).data) {
             const d = (raw as any).data;
             const b = Array.isArray(d) ? d : Object.values(d);
-            try { return AccountAddress.from(new Uint8Array(b as number[])).toString(); } catch { return raw.toString(); }
+            try { return AccountAddress.from(new Uint8Array(b as number[])).toString(); } catch { return String(raw); }
           }
-          return raw.toString();
+          return String(raw);
         })(),
         timestamp: Date.now(),
       };
@@ -1593,6 +1675,7 @@ export default function Dashboard() {
                     {[
                       { label: "Network Name", value: "Shelbynet", key: "name" },
                       { label: "Node URL (RPC)", value: "https://api.shelbynet.shelby.xyz/v1", key: "rpc" },
+                      { label: "Storage Location / Endpoint", value: "shelbynet-1 (https://api.shelbynet.shelby.xyz/shelby)", key: "location" },
                       { label: "Chain ID", value: "113", key: "chainId" },
                       { label: "Token Symbol", value: "APT", key: "symbol" },
                       { label: "Block Explorer", value: "https://explorer.shelby.xyz/shelbynet", key: "explorer" },
