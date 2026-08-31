@@ -53,11 +53,14 @@ export async function POST(req: NextRequest) {
     const blobArrayBuffer = await blobFile.arrayBuffer();
     const blobData = new Uint8Array(blobArrayBuffer);
 
-    // Initialize Shelby SDK server client with direct RPC endpoint (avoids S3Gateway routing)
+    // Initialize Shelby SDK server client with correct rpc.baseUrl config
     const shelbyClient = new ShelbyClient({
       network: Network.SHELBYNET as any,
-      apiKey: SHELBY_API_KEY,
-      rpcEndpoint: SHELBY_RPC_ENDPOINT,
+      rpc: {
+        baseUrl: SHELBY_RPC_ENDPOINT,
+        apiKey: SHELBY_API_KEY,
+      },
+      locationHint: "shelbynet-1",
     });
 
     console.log(`[shelby-upload] Uploading blob uid=${uid}, size=${blobData.length} bytes`);
