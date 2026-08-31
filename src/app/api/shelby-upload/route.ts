@@ -5,7 +5,9 @@ import { ShelbyClient } from "@shelby-protocol/sdk/node";
 // Server-side only env vars (no NEXT_PUBLIC_ prefix = never sent to browser)
 const SHELBY_PRIVATE_KEY = process.env.SHELBY_SERVER_PRIVATE_KEY || "";
 const SHELBY_API_KEY = process.env.SHELBY_API_KEY || "";
-const SHELBY_LOCATION = "shelbynet-1";
+const SHELBY_RPC_ENDPOINT =
+  process.env.SHELBY_RPC_ENDPOINT ||
+  "https://api.shelbynet.shelby.xyz/shelby";
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,11 +53,11 @@ export async function POST(req: NextRequest) {
     const blobArrayBuffer = await blobFile.arrayBuffer();
     const blobData = new Uint8Array(blobArrayBuffer);
 
-    // Initialize Shelby SDK server client with API key for authenticated RPC access
+    // Initialize Shelby SDK server client with direct RPC endpoint (avoids S3Gateway routing)
     const shelbyClient = new ShelbyClient({
       network: Network.SHELBYNET as any,
       apiKey: SHELBY_API_KEY,
-      locationHint: SHELBY_LOCATION,
+      rpcEndpoint: SHELBY_RPC_ENDPOINT,
     });
 
     console.log(`[shelby-upload] Uploading blob uid=${uid}, size=${blobData.length} bytes`);
