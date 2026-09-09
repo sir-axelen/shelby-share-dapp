@@ -543,12 +543,17 @@ export default function Dashboard() {
           encoding: 0,
         });
         const registerTxResult = await signAndSubmitTransaction({ data: registerPayload });
-        await aptos.waitForTransaction({ transactionHash: registerTxResult.hash });
-        const registerTx = { registeredBlobUids: [registerTxResult.hash] };
+        const tx = await aptos.waitForTransaction({ transactionHash: registerTxResult.hash }) as any;
+        
+        // Extract real on-chain blob UID from transaction events
+        const deployer = AccountAddress.fromString("0x85fdb9a176ab8ef1d9d9c1b60d60b3924f0800ac1de1cc2085fb0b8bb4988e6a");
+        const registered = tx?.events ? ShelbyBlobClient.registeredBlobUids(tx.events, deployer) : [];
+        const blobUid = registered.length > 0 
+          ? registered[0].uid.toString() 
+          : (tx?.events?.find((e: any) => e.type?.includes("BlobRegisteredEvent"))?.data?.uid?.toString() || null);
 
-        const blobUid = registerTx.registeredBlobUids[0];
         if (!blobUid) {
-          throw new Error("Failed to retrieve registered blob UID from transaction");
+          throw new Error("Failed to retrieve registered blob UID from transaction events");
         }
 
         setProgressLabel("Uploading chunksets to Shelby via server proxy…");

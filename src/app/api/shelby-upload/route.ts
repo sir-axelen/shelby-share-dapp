@@ -82,8 +82,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("[shelby-upload] Error:", err);
+    const msg = err.message || "Upload failed";
+    if (msg.includes("Service type S3Gateway is not allowed")) {
+      return NextResponse.json(
+        {
+          error:
+            "Shelby API key configuration error: Your SHELBY_API_KEY has service type 'S3Gateway'. " +
+            "The upload RPC requires service type 'Api' or 'All'. " +
+            "Please generate an API key with service type 'Api' or 'All' at https://build.aptoslabs.com and update SHELBY_API_KEY in .env.local.",
+        },
+        { status: 401 }
+      );
+    }
     return NextResponse.json(
-      { error: err.message || "Upload failed" },
+      { error: msg },
       { status: 500 }
     );
   }
