@@ -65,18 +65,36 @@ export async function POST(req: NextRequest) {
 
     console.log(`[shelby-upload] Uploading blob uid=${uid}, size=${blobData.length} bytes`);
 
-    // Upload via challenge-response auth (serverAccount signs the challenge)
-    await shelbyClient.rpc.putBlobChunksets({
-      account: serverAccount,
-      uid,
-      blobData,
-      commitments: commitment,
-      onProgress: (p) => {
-        console.log(
-          `[shelby-upload] Progress: chunkset ${p.chunksetIdx + 1}/${p.totalChunksets} (${p.uploadedBytes}/${p.totalBytes} bytes)`
-        );
-      },
-    });
+    // Intercept fetch to attach Origin header for Client API keys in server environment
+    const clientOrigin =
+      req.headers.get("origin") ||
+      req.nextUrl.origin ||
+      "https://axel-share-dapp.vercel.app";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      if (!headers.has("Origin")) {
+        headers.set("Origin", clientOrigin);
+      }
+      return originalFetch(input, { ...init, headers });
+    };
+
+    try {
+      // Upload via challenge-response auth (serverAccount signs the challenge)
+      await shelbyClient.rpc.putBlobChunksets({
+        account: serverAccount,
+        uid,
+        blobData,
+        commitments: commitment,
+        onProgress: (p) => {
+          console.log(
+            `[shelby-upload] Progress: chunkset ${p.chunksetIdx + 1}/${p.totalChunksets} (${p.uploadedBytes}/${p.totalBytes} bytes)`
+          );
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
 
     console.log(`[shelby-upload] Upload complete for uid=${uid}`);
     return NextResponse.json({ success: true });
